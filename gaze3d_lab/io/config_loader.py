@@ -180,6 +180,10 @@ def load_app_config(path: str | Path) -> AppConfig:
         focus_switch_interval=float(synthetic_raw.get("focus_switch_interval", 1.8)),
         focus_jitter_std=float(synthetic_raw.get("focus_jitter_std", 0.03)),
         focus_pull=float(synthetic_raw.get("focus_pull", 0.9)),
+        head_focus_pull=float(synthetic_raw.get("head_focus_pull", 0.65)),
+        head_parallel_angle_deg=float(synthetic_raw.get("head_parallel_angle_deg", -15.0)),
+        head_parallel_angle_variation_deg=float(synthetic_raw.get("head_parallel_angle_variation_deg", 5.0)),
+        head_parallel_osc_speed=float(synthetic_raw.get("head_parallel_osc_speed", 0.9)),
     )
     webcam_cfg = WebcamConfig(camera_index=int(webcam_raw.get("camera_index", 0)))
     recorded_cfg = RecordedConfig(

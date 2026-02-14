@@ -98,6 +98,7 @@ Camera pose in YAML supports either:
 - `7`: toggle object hit point
 - `8`: toggle objects
 - `9`: toggle plane outline
+- `0`: toggle gaze-ray clipping at first object hit (`on` by default)
 - `F`: cycle filter mode (`none -> ema -> one_euro`)
 - `[` / `]`: EMA alpha down/up
 - `-` / `=`: OneEuro beta down/up

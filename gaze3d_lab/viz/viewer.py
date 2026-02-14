@@ -163,7 +163,7 @@ class SceneViewer:
         self.view.setWindowTitle("gaze3d-lab")
         self.view.resize(1280, 800)
         self.view.setBackgroundColor((10, 16, 25))
-        self.view.setCameraPosition(distance=6.0, elevation=20.0, azimuth=-40.0)
+        self.view.setCameraPosition(distance=9.0, elevation=20.0, azimuth=-40.0)
 
         self._empty_pos = np.empty((0, 3), dtype=np.float64)
         self._head_axis_x = np.zeros((2, 3), dtype=np.float64)
@@ -401,6 +401,7 @@ class SceneViewer:
 
         control_actions = {
             QtCore.Qt.Key_F: "cycle_filter",
+            QtCore.Qt.Key_0: "toggle_ray_clip",
             QtCore.Qt.Key_BracketLeft: "ema_down",
             QtCore.Qt.Key_BracketRight: "ema_up",
             QtCore.Qt.Key_Minus: "beta_down",
@@ -423,7 +424,7 @@ class SceneViewer:
     def print_controls(self) -> None:
         print(
             "Controls: 1 world, 2 frustum, 3 head, 4 face, 5 gaze, 6 plane hit, "
-            "7 object hit, 8 objects, 9 plane, F filter, [/] ema, -/= beta, ,/. min cutoff"
+            "7 object hit, 8 objects, 9 plane, 0 ray-clip, F filter, [/] ema, -/= beta, ,/. min cutoff"
         )
 
     def update_dynamic(

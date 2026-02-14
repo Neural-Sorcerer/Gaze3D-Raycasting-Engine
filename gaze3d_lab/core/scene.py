@@ -97,6 +97,10 @@ class SyntheticConfig:
     focus_switch_interval: float = 1.8
     focus_jitter_std: float = 0.03
     focus_pull: float = 0.9
+    head_focus_pull: float = 0.65
+    head_parallel_angle_deg: float = -15.0
+    head_parallel_angle_variation_deg: float = 5.0
+    head_parallel_osc_speed: float = 0.9
 
 
 @dataclass

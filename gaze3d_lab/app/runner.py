@@ -32,8 +32,10 @@ def run_app(mode: str, config_path: str | Path) -> int:
     source = _build_data_source(mode, cfg)
     smoother = PoseGazeSmoother(cfg.filter)
     profiler = FrameProfiler()
+    clip_ray_on_hit = True
 
     def handle_control(action: str) -> None:
+        nonlocal clip_ray_on_hit
         if action == "cycle_filter":
             smoother.cycle_mode()
         elif action == "ema_down":
@@ -48,6 +50,8 @@ def run_app(mode: str, config_path: str | Path) -> int:
             smoother.adjust_one_euro_min_cutoff(-0.1)
         elif action == "min_cutoff_up":
             smoother.adjust_one_euro_min_cutoff(0.1)
+        elif action == "toggle_ray_clip":
+            clip_ray_on_hit = not clip_ray_on_hit
 
     viewer = SceneViewer(cfg, mode=mode, control_callback=handle_control)
 
@@ -90,13 +94,27 @@ def run_app(mode: str, config_path: str | Path) -> int:
             object_hit = intersect_scene_objects(face_world, gaze_world, cfg.objects)
             profiler.mark("intersections")
 
+            render_ray_length = cfg.render.ray_length
+            if clip_ray_on_hit and object_hit is not None:
+                render_ray_length = max(0.01, min(render_ray_length, object_hit.t))
+
+            render_plane_hit = plane_hit
+            if (
+                clip_ray_on_hit
+                and object_hit is not None
+                and plane_hit is not None
+                and plane_hit.t >= object_hit.t - 1e-6
+            ):
+                # Hide plane marker when it lies behind the clipped object hit.
+                render_plane_hit = None
+
             viewer.update_dynamic(
                 head_transform_world=head_world,
                 face_center_world=face_world,
                 gaze_direction_world=gaze_world,
-                ray_length=cfg.render.ray_length,
+                ray_length=render_ray_length,
                 head_axis_length=cfg.render.head_axis_length,
-                plane_hit=plane_hit,
+                plane_hit=render_plane_hit,
                 object_hit=object_hit,
             )
             profiler.mark("render")
@@ -104,7 +122,11 @@ def run_app(mode: str, config_path: str | Path) -> int:
 
             frame_idx += 1
             if frame_idx % 8 == 0:
-                viewer.update_status(fps=fps, stage_ms=profiler.stage_snapshot_ms(), filter_info=smoother.describe())
+                viewer.update_status(
+                    fps=fps,
+                    stage_ms=profiler.stage_snapshot_ms(),
+                    filter_info=f"{smoother.describe()} ray_clip={'on' if clip_ray_on_hit else 'off'}",
+                )
         except Exception as exc:
             timer.stop()
             source.close()

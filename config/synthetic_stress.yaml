@@ -111,7 +111,7 @@ data_sources:
     noise_std: 0.04
     motion_scale: 1.25
     translation_amplitude: [0.15, 0.10, 0.05]
-    rotation_amplitude_deg: [7.5, 12.0, 18.0]
+    rotation_amplitude_deg: [2.4, 3.5, 5.0]
     gaze_xy_amplitude: [0.16, 0.12]
     gaze_depth: 1.05
     micro_saccade_interval: 1.3
@@ -124,6 +124,10 @@ data_sources:
     focus_switch_interval: 1.1
     focus_jitter_std: 0.05
     focus_pull: 0.88
+    head_focus_pull: 0.82
+    head_parallel_angle_deg: -15.0
+    head_parallel_angle_variation_deg: 5.0
+    head_parallel_osc_speed: 1.2
   webcam:
     camera_index: 0
   recorded:
