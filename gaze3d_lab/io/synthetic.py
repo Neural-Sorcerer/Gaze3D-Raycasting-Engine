@@ -60,7 +60,7 @@ class SyntheticDataSource(DataSource):
             [
                 tx_amp * np.sin(0.65 * t) + 0.04 * tx_amp * np.sin(1.9 * t + 0.2),
                 -0.03 + ty_amp * np.cos(0.55 * t) + 0.06 * ty_amp * np.sin(1.1 * t),
-                0.70 + tz_amp * np.sin(0.43 * t) + 0.10 * tz_amp * np.cos(1.3 * t + 0.4),
+                0.86 + tz_amp * np.sin(0.43 * t) + 0.10 * tz_amp * np.cos(1.3 * t + 0.4),
             ],
             dtype=np.float64,
         )

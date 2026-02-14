@@ -230,7 +230,8 @@ class SceneViewer:
         assert gl is not None
         cam = self._config.camera_pose_world
         origin = cam.translation
-        length = 0.25
+        # Keep camera gizmo compact in dense scenes.
+        length = 0.083
 
         colors = [
             (1.0, 0.1, 0.1, 1.0),
@@ -248,7 +249,8 @@ class SceneViewer:
 
     def _build_camera_frustum_item(self):
         assert gl is not None
-        near, far = self._config.camera_intrinsics.frustum_corners(0.08, 0.45)
+        # Scale frustum display down to avoid overpowering nearby scene objects.
+        near, far = self._config.camera_intrinsics.frustum_corners(0.027, 0.15)
         cam = self._config.camera_pose_world
 
         near_w = np.asarray([cam.apply_point(p) for p in near], dtype=np.float64)
