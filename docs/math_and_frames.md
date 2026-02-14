@@ -12,6 +12,7 @@ Transform notation:
 - `T_AB = [R_AB, t_AB]` where `R_AB` is 3x3, `t_AB` is 3x1.
 
 Camera pose tip:
+
 - Prefer configuring `T_WC` via a look-at target in YAML (`pose_world.look_at`) to avoid accidental reversed orientation from Euler angles.
 
 ## Pose and Gaze Conversion
