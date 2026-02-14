@@ -5,8 +5,8 @@ from collections.abc import Callable
 import numpy as np
 import numpy.typing as npt
 
-from gaze3d_lab.core.scene import AABBObjectConfig, AppConfig, SphereObjectConfig
-from gaze3d_lab.core.transforms import RigidTransform, normalize_vector
+from gaze3d_lab.core.scene import AABBObjectConfig, AppConfig, OBBObjectConfig, SphereObjectConfig
+from gaze3d_lab.core.transforms import RigidTransform, euler_xyz_to_matrix, normalize_vector
 from gaze3d_lab.geometry.intersections import IntersectionHit
 
 try:  # pragma: no cover - UI imports not exercised by unit tests.
@@ -113,6 +113,18 @@ def _build_sphere_mesh(
     return np.asarray(vertices, dtype=np.float64), np.asarray(faces, dtype=np.int32)
 
 
+def _build_obb_mesh(
+    center: Vector3,
+    size: Vector3,
+    euler_deg: Vector3,
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.int32]]:
+    half = size * 0.5
+    vertices_local, faces = _build_box_mesh(-half, half)
+    rotation = euler_xyz_to_matrix(*np.radians(euler_deg))
+    vertices_world = (rotation @ vertices_local.T).T + center
+    return vertices_world, faces
+
+
 if gl is not None:
 
     class _InteractiveGLView(gl.GLViewWidget):  # type: ignore[misc]
@@ -151,7 +163,7 @@ class SceneViewer:
         self.view.setWindowTitle("gaze3d-lab")
         self.view.resize(1280, 800)
         self.view.setBackgroundColor((10, 16, 25))
-        self.view.setCameraPosition(distance=3.0, elevation=20.0, azimuth=-40.0)
+        self.view.setCameraPosition(distance=6.0, elevation=20.0, azimuth=-40.0)
 
         self._empty_pos = np.empty((0, 3), dtype=np.float64)
         self._head_axis_x = np.zeros((2, 3), dtype=np.float64)
@@ -293,6 +305,8 @@ class SceneViewer:
         for obj in self._config.objects:
             if isinstance(obj, AABBObjectConfig):
                 verts, faces = _build_box_mesh(obj.min_corner, obj.max_corner)
+            elif isinstance(obj, OBBObjectConfig):
+                verts, faces = _build_obb_mesh(obj.center, obj.size, obj.euler_deg)
             elif isinstance(obj, SphereObjectConfig):
                 verts, faces = _build_sphere_mesh(obj.center, obj.radius)
             else:

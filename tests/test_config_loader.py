@@ -9,7 +9,7 @@ def test_default_camera_look_at_points_to_scene_target() -> None:
     cfg = load_app_config("config/default.yaml")
 
     camera_pos = cfg.camera_pose_world.translation
-    target = np.array([0.0, 0.0, 0.25], dtype=np.float64)
+    target = np.array([0.0, 0.35, 0.78], dtype=np.float64)
 
     expected = target - camera_pos
     expected /= np.linalg.norm(expected)
@@ -21,6 +21,8 @@ def test_default_camera_look_at_points_to_scene_target() -> None:
 def test_synthetic_stress_config_overrides_defaults() -> None:
     cfg = load_app_config("config/synthetic_stress.yaml")
 
-    assert cfg.synthetic.motion_scale == 1.2
-    assert cfg.synthetic.noise_std == 0.035
-    assert cfg.synthetic.micro_saccade_strength == 0.08
+    assert cfg.synthetic.motion_scale == 1.25
+    assert cfg.synthetic.noise_std == 0.04
+    assert cfg.synthetic.micro_saccade_strength == 0.07
+    assert len(cfg.synthetic.focus_targets_world) == 3
+    assert cfg.camera_pose_world.translation[1] == 1.26

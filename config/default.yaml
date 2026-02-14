@@ -7,33 +7,99 @@ camera:
     width: 1280
     height: 720
   pose_world:
-    translation: [0.0, -1.35, 1.1]
+    # Camera mounted above the center TV and looking toward the subject area.
+    translation: [0.0, 1.26, 1.52]
     look_at:
-      target: [0.0, 0.0, 0.25]
+      target: [0.0, 0.35, 0.78]
       up: [0.0, 0.0, 1.0]
 
 scene:
   plane:
     point: [0.0, 0.0, 0.0]
     normal: [0.0, 0.0, 1.0]
-    size: [2.8, 2.8]
-    color: [0.2, 0.8, 1.0, 0.28]
+    size: [6.0, 6.0]
+    color: [0.2, 0.8, 1.0, 0.20]
   objects:
-    - type: box
-      name: box_left
-      min: [-0.75, -0.2, 0.0]
-      max: [-0.35, 0.2, 0.35]
-      color: [0.9, 0.4, 0.4, 0.30]
-    - type: box
-      name: box_right
-      min: [0.35, -0.25, 0.0]
-      max: [0.75, 0.2, 0.45]
-      color: [0.95, 0.8, 0.3, 0.30]
+    # TV wall: width doubled vs previous layout. Left/right TVs are yawed inward by 30 degrees.
+    # Frame bezel kept near 1% of TV width/height via screen-vs-frame size difference.
+    - type: obb
+      name: tv_left_frame
+      center: [-1.58, 1.26, 0.86]
+      size: [1.68, 0.06, 0.55]
+      euler_deg: [0.0, 0.0, 30.0]
+      color: [0.19, 0.21, 0.25, 0.42]
+    - type: obb
+      name: tv_center_frame
+      center: [0.00, 1.26, 0.86]
+      size: [1.68, 0.06, 0.55]
+      euler_deg: [0.0, 0.0, 0.0]
+      color: [0.19, 0.21, 0.25, 0.42]
+    - type: obb
+      name: tv_right_frame
+      center: [1.58, 1.26, 0.86]
+      size: [1.68, 0.06, 0.55]
+      euler_deg: [0.0, 0.0, -30.0]
+      color: [0.19, 0.21, 0.25, 0.42]
+
+    - type: obb
+      name: tv_left_screen
+      center: [-1.58, 1.228, 0.86]
+      size: [1.646, 0.012, 0.539]
+      euler_deg: [0.0, 0.0, 30.0]
+      color: [0.20, 0.68, 0.96, 0.58]
+    - type: obb
+      name: tv_center_screen
+      center: [0.00, 1.228, 0.86]
+      size: [1.646, 0.012, 0.539]
+      euler_deg: [0.0, 0.0, 0.0]
+      color: [0.16, 0.80, 1.00, 0.58]
+    - type: obb
+      name: tv_right_screen
+      center: [1.58, 1.228, 0.86]
+      size: [1.646, 0.012, 0.539]
+      euler_deg: [0.0, 0.0, -30.0]
+      color: [0.19, 0.65, 0.95, 0.58]
+
+    - type: obb
+      name: tv_left_stand
+      center: [-1.58, 1.30, 0.29]
+      size: [0.16, 0.08, 0.58]
+      euler_deg: [0.0, 0.0, 30.0]
+      color: [0.34, 0.36, 0.42, 0.32]
+    - type: obb
+      name: tv_center_stand
+      center: [0.00, 1.30, 0.29]
+      size: [0.16, 0.08, 0.58]
+      euler_deg: [0.0, 0.0, 0.0]
+      color: [0.34, 0.36, 0.42, 0.32]
+    - type: obb
+      name: tv_right_stand
+      center: [1.58, 1.30, 0.29]
+      size: [0.16, 0.08, 0.58]
+      euler_deg: [0.0, 0.0, -30.0]
+      color: [0.34, 0.36, 0.42, 0.32]
+
+    # Off-center decor objects.
     - type: sphere
-      name: sphere_center
-      center: [0.0, 0.45, 0.35]
+      name: decor_sphere_left
+      center: [-2.60, 0.92, 0.24]
+      radius: 0.24
+      color: [0.90, 0.45, 0.35, 0.35]
+    - type: sphere
+      name: decor_sphere_right
+      center: [2.62, 1.06, 0.20]
       radius: 0.20
-      color: [0.4, 0.95, 0.6, 0.32]
+      color: [0.35, 0.88, 0.52, 0.35]
+    - type: box
+      name: decor_cube_left
+      min: [-2.95, 0.24, 0.00]
+      max: [-2.55, 0.60, 0.36]
+      color: [0.95, 0.78, 0.28, 0.34]
+    - type: box
+      name: decor_cube_right
+      min: [2.55, 0.16, 0.00]
+      max: [2.95, 0.52, 0.30]
+      color: [0.75, 0.50, 0.95, 0.34]
 
 filters:
   mode: one_euro
@@ -48,13 +114,20 @@ data_sources:
     seed: 7
     noise_std: 0.02
     motion_scale: 1.0
-    translation_amplitude: [0.12, 0.08, 0.04]
-    rotation_amplitude_deg: [5.0, 8.5, 12.5]
-    gaze_xy_amplitude: [0.28, 0.16]
-    gaze_depth: 1.1
-    micro_saccade_interval: 2.2
-    micro_saccade_strength: 0.05
-    micro_saccade_decay: 7.0
+    translation_amplitude: [0.10, 0.06, 0.03]
+    rotation_amplitude_deg: [4.5, 7.0, 11.0]
+    gaze_xy_amplitude: [0.10, 0.07]
+    gaze_depth: 1.05
+    micro_saccade_interval: 1.8
+    micro_saccade_strength: 0.035
+    micro_saccade_decay: 7.5
+    focus_targets_world:
+      - [-1.565, 1.234, 0.86]
+      - [0.000, 1.228, 0.86]
+      - [1.565, 1.234, 0.86]
+    focus_switch_interval: 1.7
+    focus_jitter_std: 0.025
+    focus_pull: 0.94
   webcam:
     camera_index: 0
   recorded:
@@ -64,5 +137,5 @@ data_sources:
 
 render:
   target_fps: 60
-  ray_length: 3.0
+  ray_length: 6.0
   head_axis_length: 0.16

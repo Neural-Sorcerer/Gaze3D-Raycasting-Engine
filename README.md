@@ -10,6 +10,8 @@
 - Frame transforms: camera frame -> world frame conversion for pose and rays.
 - Data source plugins: `synthetic`, `webcam` (mock estimator placeholder), `recorded` (CSV/JSON).
 - Extended synthetic trajectories include multi-frequency motion + micro-saccade bursts for filter stress testing.
+- Advanced default scene with 3 TV targets and off-center decorative spheres/cubes.
+- Left/right TVs are angled inward (30 deg) with OBB geometry support for realistic layout tests.
 - Smoothing: `EMA` and `OneEuroFilter`, tunable at runtime via keyboard.
 - Lightweight performance profiling: FPS + per-stage timings.
 - Clean modular architecture and pytest coverage for core geometry math.

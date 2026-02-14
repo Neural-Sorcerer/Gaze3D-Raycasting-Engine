@@ -11,6 +11,7 @@ from gaze3d_lab.core.scene import (
     AABBObjectConfig,
     AppConfig,
     FilterConfig,
+    OBBObjectConfig,
     PlaneConfig,
     RecordedConfig,
     RenderConfig,
@@ -51,6 +52,16 @@ def _load_objects(objects_raw: list[dict[str, Any]]) -> list[SceneObjectConfig]:
                     min_corner=_vec3(item["min"], f"scene.objects[{name}].min"),
                     max_corner=_vec3(item["max"], f"scene.objects[{name}].max"),
                     color=_color_rgba(item.get("color"), (0.9, 0.4, 0.4, 0.35)),
+                )
+            )
+        elif kind in {"obb", "oriented_box"}:
+            objects.append(
+                OBBObjectConfig(
+                    name=name,
+                    center=_vec3(item["center"], f"scene.objects[{name}].center"),
+                    size=_vec3(item["size"], f"scene.objects[{name}].size"),
+                    euler_deg=_vec3(item.get("euler_deg", [0.0, 0.0, 0.0]), f"scene.objects[{name}].euler_deg"),
+                    color=_color_rgba(item.get("color"), (0.7, 0.7, 0.9, 0.35)),
                 )
             )
         elif kind == "sphere":
@@ -162,6 +173,13 @@ def load_app_config(path: str | Path) -> AppConfig:
         micro_saccade_interval=float(synthetic_raw.get("micro_saccade_interval", 2.2)),
         micro_saccade_strength=float(synthetic_raw.get("micro_saccade_strength", 0.05)),
         micro_saccade_decay=float(synthetic_raw.get("micro_saccade_decay", 7.0)),
+        focus_targets_world=tuple(
+            _vec3_tuple(item, f"data_sources.synthetic.focus_targets_world[{idx}]")
+            for idx, item in enumerate(synthetic_raw.get("focus_targets_world", []))
+        ),
+        focus_switch_interval=float(synthetic_raw.get("focus_switch_interval", 1.8)),
+        focus_jitter_std=float(synthetic_raw.get("focus_jitter_std", 0.03)),
+        focus_pull=float(synthetic_raw.get("focus_pull", 0.9)),
     )
     webcam_cfg = WebcamConfig(camera_index=int(webcam_raw.get("camera_index", 0)))
     recorded_cfg = RecordedConfig(

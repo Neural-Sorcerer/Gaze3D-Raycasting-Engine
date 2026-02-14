@@ -51,7 +51,25 @@ class SphereObjectConfig:
             raise ValueError(f"Sphere radius must be > 0 for {self.name}")
 
 
-SceneObjectConfig = AABBObjectConfig | SphereObjectConfig
+@dataclass
+class OBBObjectConfig:
+    """Oriented box object defined by center, size, and Euler rotation (degrees)."""
+
+    name: str
+    center: Vector3
+    size: Vector3
+    euler_deg: Vector3
+    color: ColorRGBA = (0.7, 0.7, 0.9, 0.35)
+
+    def __post_init__(self) -> None:
+        self.center = np.asarray(self.center, dtype=np.float64)
+        self.size = np.asarray(self.size, dtype=np.float64)
+        self.euler_deg = np.asarray(self.euler_deg, dtype=np.float64)
+        if np.any(self.size <= 0.0):
+            raise ValueError(f"Invalid OBB size for {self.name}")
+
+
+SceneObjectConfig = AABBObjectConfig | OBBObjectConfig | SphereObjectConfig
 
 
 @dataclass
@@ -75,6 +93,10 @@ class SyntheticConfig:
     micro_saccade_interval: float = 2.2
     micro_saccade_strength: float = 0.05
     micro_saccade_decay: float = 7.0
+    focus_targets_world: tuple[tuple[float, float, float], ...] = ()
+    focus_switch_interval: float = 1.8
+    focus_jitter_std: float = 0.03
+    focus_pull: float = 0.9
 
 
 @dataclass

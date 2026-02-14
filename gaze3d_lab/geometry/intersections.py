@@ -6,8 +6,8 @@ from typing import Sequence
 import numpy as np
 import numpy.typing as npt
 
-from gaze3d_lab.core.scene import AABBObjectConfig, SceneObjectConfig, SphereObjectConfig
-from gaze3d_lab.core.transforms import normalize_vector
+from gaze3d_lab.core.scene import AABBObjectConfig, OBBObjectConfig, SceneObjectConfig, SphereObjectConfig
+from gaze3d_lab.core.transforms import RigidTransform, euler_xyz_to_matrix, normalize_vector
 
 Vector3 = npt.NDArray[np.float64]
 
@@ -148,6 +148,36 @@ def ray_sphere_intersection(
     return IntersectionHit(t=float(t_hit), point=point, normal=normal, object_name=None)
 
 
+def ray_obb_intersection(
+    ray_origin: Sequence[float] | npt.NDArray[np.float64],
+    ray_direction: Sequence[float] | npt.NDArray[np.float64],
+    center: Sequence[float] | npt.NDArray[np.float64],
+    size: Sequence[float] | npt.NDArray[np.float64],
+    euler_deg: Sequence[float] | npt.NDArray[np.float64],
+) -> IntersectionHit | None:
+    center_v = _as_vec3(center, "center")
+    size_v = _as_vec3(size, "size")
+    euler = np.radians(_as_vec3(euler_deg, "euler_deg"))
+    if np.any(size_v <= 0.0):
+        raise ValueError("OBB size must be > 0")
+
+    box_tf = RigidTransform(rotation=euler_xyz_to_matrix(*euler), translation=center_v)
+    box_inv = box_tf.inverse()
+
+    origin_local = box_inv.apply_point(ray_origin)
+    direction_local = box_inv.apply_vector(ray_direction)
+    half = size_v * 0.5
+
+    local_hit = ray_aabb_intersection(origin_local, direction_local, -half, half)
+    if local_hit is None:
+        return None
+
+    point_world = box_tf.apply_point(local_hit.point)
+    normal_world = normalize_vector(box_tf.apply_vector(local_hit.normal))
+
+    return IntersectionHit(t=float(local_hit.t), point=point_world, normal=normal_world, object_name=None)
+
+
 def intersect_scene_objects(
     ray_origin: Sequence[float] | npt.NDArray[np.float64],
     ray_direction: Sequence[float] | npt.NDArray[np.float64],
@@ -159,6 +189,8 @@ def intersect_scene_objects(
         hit: IntersectionHit | None
         if isinstance(obj, AABBObjectConfig):
             hit = ray_aabb_intersection(ray_origin, ray_direction, obj.min_corner, obj.max_corner)
+        elif isinstance(obj, OBBObjectConfig):
+            hit = ray_obb_intersection(ray_origin, ray_direction, obj.center, obj.size, obj.euler_deg)
         elif isinstance(obj, SphereObjectConfig):
             hit = ray_sphere_intersection(ray_origin, ray_direction, obj.center, obj.radius)
         else:

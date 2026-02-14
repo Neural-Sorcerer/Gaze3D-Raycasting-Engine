@@ -14,7 +14,7 @@ from .datasource import DataSource
 class SyntheticDataSource(DataSource):
     """Procedural pose/gaze trajectories for camera-free demos."""
 
-    def __init__(self, config: SyntheticConfig) -> None:
+    def __init__(self, config: SyntheticConfig, camera_pose_world: RigidTransform | None = None) -> None:
         self._config = config
         if self._config.gaze_depth <= 0.0:
             raise ValueError("SyntheticConfig.gaze_depth must be > 0")
@@ -22,18 +22,32 @@ class SyntheticDataSource(DataSource):
             raise ValueError("SyntheticConfig.micro_saccade_interval must be > 0")
         if self._config.micro_saccade_decay <= 0.0:
             raise ValueError("SyntheticConfig.micro_saccade_decay must be > 0")
+        if self._config.focus_switch_interval <= 0.0:
+            raise ValueError("SyntheticConfig.focus_switch_interval must be > 0")
+        if self._config.focus_jitter_std < 0.0:
+            raise ValueError("SyntheticConfig.focus_jitter_std must be >= 0")
+        self._focus_pull = float(np.clip(self._config.focus_pull, 0.0, 1.0))
 
+        self._camera_pose_world = camera_pose_world
         self._rng = np.random.default_rng(self._config.seed)
         self._start_time = 0.0
         self._last_t = 0.0
         self._next_micro_saccade_t = self._config.micro_saccade_interval
         self._micro_saccade_xy = np.zeros(2, dtype=np.float64)
+        self._focus_target_index = 0
+        self._focus_direction = 1
+        self._next_focus_switch_t = self._config.focus_switch_interval
+        self._focus_offset = np.zeros(3, dtype=np.float64)
 
     def start(self) -> None:
         self._start_time = time.perf_counter()
         self._last_t = 0.0
         self._next_micro_saccade_t = self._config.micro_saccade_interval
         self._micro_saccade_xy.fill(0.0)
+        self._focus_target_index = 0
+        self._focus_direction = 1
+        self._next_focus_switch_t = self._config.focus_switch_interval
+        self._focus_offset.fill(0.0)
 
     def next_sample(self, timestamp: float) -> GazeSample:
         t = (timestamp - self._start_time) * self._config.motion_scale
@@ -80,6 +94,31 @@ class SyntheticDataSource(DataSource):
         )
         gaze_head[:2] += self._micro_saccade_xy
         gaze_head += self._rng.normal(0.0, noise_scale * 0.35, size=3)
+
+        if self._camera_pose_world is not None and len(self._config.focus_targets_world) > 0:
+            if t >= self._next_focus_switch_t:
+                target_count = len(self._config.focus_targets_world)
+                if target_count > 1:
+                    if self._focus_target_index >= target_count - 1:
+                        self._focus_direction = -1
+                    elif self._focus_target_index <= 0:
+                        self._focus_direction = 1
+                    self._focus_target_index = int(
+                        np.clip(self._focus_target_index + self._focus_direction, 0, target_count - 1)
+                    )
+
+                self._focus_offset = self._rng.normal(0.0, self._config.focus_jitter_std, size=3)
+                self._focus_offset[1] *= 0.3
+                self._next_focus_switch_t += self._config.focus_switch_interval
+
+            target_world = (
+                np.asarray(self._config.focus_targets_world[self._focus_target_index], dtype=np.float64) + self._focus_offset
+            )
+            head_world = self._camera_pose_world.compose(RigidTransform(rotation=head_rotation, translation=translation))
+            focus_dir_world = normalize_vector(target_world - head_world.translation)
+            focus_dir_head = normalize_vector(head_world.rotation.T @ focus_dir_world)
+
+            gaze_head = normalize_vector((1.0 - self._focus_pull) * gaze_head + self._focus_pull * focus_dir_head)
 
         return GazeSample(
             timestamp=timestamp,

@@ -16,7 +16,7 @@ from gaze3d_lab.viz.viewer import SceneViewer
 
 def _build_data_source(mode: str, config) -> DataSource:
     if mode == "synthetic":
-        return SyntheticDataSource(config.synthetic)
+        return SyntheticDataSource(config.synthetic, camera_pose_world=config.camera_pose_world)
     if mode == "webcam":
         # Keep OpenCV import isolated to webcam mode only.
         from gaze3d_lab.io.webcam import WebcamDataSource
