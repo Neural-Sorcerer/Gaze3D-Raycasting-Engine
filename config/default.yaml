@@ -1,0 +1,68 @@
+camera:
+  intrinsics:
+    fx: 920.0
+    fy: 920.0
+    cx: 640.0
+    cy: 360.0
+    width: 1280
+    height: 720
+  pose_world:
+    translation: [0.0, -1.35, 1.1]
+    look_at:
+      target: [0.0, 0.0, 0.25]
+      up: [0.0, 0.0, 1.0]
+
+scene:
+  plane:
+    point: [0.0, 0.0, 0.0]
+    normal: [0.0, 0.0, 1.0]
+    size: [2.8, 2.8]
+    color: [0.2, 0.8, 1.0, 0.28]
+  objects:
+    - type: box
+      name: box_left
+      min: [-0.75, -0.2, 0.0]
+      max: [-0.35, 0.2, 0.35]
+      color: [0.9, 0.4, 0.4, 0.30]
+    - type: box
+      name: box_right
+      min: [0.35, -0.25, 0.0]
+      max: [0.75, 0.2, 0.45]
+      color: [0.95, 0.8, 0.3, 0.30]
+    - type: sphere
+      name: sphere_center
+      center: [0.0, 0.45, 0.35]
+      radius: 0.20
+      color: [0.4, 0.95, 0.6, 0.32]
+
+filters:
+  mode: one_euro
+  ema_alpha: 0.35
+  one_euro:
+    min_cutoff: 1.2
+    beta: 0.02
+    d_cutoff: 1.0
+
+data_sources:
+  synthetic:
+    seed: 7
+    noise_std: 0.02
+    motion_scale: 1.0
+    translation_amplitude: [0.12, 0.08, 0.04]
+    rotation_amplitude_deg: [5.0, 8.5, 12.5]
+    gaze_xy_amplitude: [0.28, 0.16]
+    gaze_depth: 1.1
+    micro_saccade_interval: 2.2
+    micro_saccade_strength: 0.05
+    micro_saccade_decay: 7.0
+  webcam:
+    camera_index: 0
+  recorded:
+    path: data/recorded_demo.csv
+    loop: true
+    speed: 1.0
+
+render:
+  target_fps: 60
+  ray_length: 3.0
+  head_axis_length: 0.16
