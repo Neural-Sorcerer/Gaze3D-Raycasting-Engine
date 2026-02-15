@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from gaze3d_lab.core.face_model import estimate_eye_center_head, load_face_mesh_template_m
 from gaze3d_lab.core.profiler import FrameProfiler
 from gaze3d_lab.core.transforms import RigidTransform, euler_xyz_to_matrix, matrix_to_euler_xyz, normalize_vector
 from gaze3d_lab.filters.manager import PoseGazeSmoother
@@ -29,6 +30,8 @@ def _build_data_source(mode: str, config) -> DataSource:
 
 def run_app(mode: str, config_path: str | Path) -> int:
     cfg = load_app_config(config_path)
+    face_mesh_points_head = load_face_mesh_template_m()
+    gaze_origin_head = estimate_eye_center_head(face_mesh_points_head)
     source = _build_data_source(mode, cfg)
     smoother = PoseGazeSmoother(cfg.filter)
     profiler = FrameProfiler()
@@ -53,7 +56,12 @@ def run_app(mode: str, config_path: str | Path) -> int:
         elif action == "toggle_ray_clip":
             clip_ray_on_hit = not clip_ray_on_hit
 
-    viewer = SceneViewer(cfg, mode=mode, control_callback=handle_control)
+    viewer = SceneViewer(
+        cfg,
+        mode=mode,
+        control_callback=handle_control,
+        face_mesh_points_head=face_mesh_points_head,
+    )
 
     source.start()
     viewer.qt_app.aboutToQuit.connect(source.close)
@@ -76,22 +84,23 @@ def run_app(mode: str, config_path: str | Path) -> int:
             profiler.mark("source")
 
             head_world_raw = cfg.camera_pose_world.compose(sample.head_transform_cam)
-            face_world_raw = head_world_raw.translation
+            head_origin_world_raw = head_world_raw.translation
             head_euler_raw = matrix_to_euler_xyz(head_world_raw.rotation)
             gaze_world_raw = normalize_vector(head_world_raw.apply_vector(sample.gaze_direction_head))
 
-            face_world, head_euler, gaze_world = smoother.update(
+            head_origin_world, head_euler, gaze_world = smoother.update(
                 sample.timestamp,
-                face_world_raw,
+                head_origin_world_raw,
                 head_euler_raw,
                 gaze_world_raw,
             )
 
-            head_world = RigidTransform(rotation=euler_xyz_to_matrix(*head_euler), translation=face_world)
+            head_world = RigidTransform(rotation=euler_xyz_to_matrix(*head_euler), translation=head_origin_world)
+            gaze_origin_world = head_world.apply_point(gaze_origin_head)
             profiler.mark("filters")
 
-            plane_hit = ray_plane_intersection(face_world, gaze_world, cfg.plane.point, cfg.plane.normal)
-            object_hit = intersect_scene_objects(face_world, gaze_world, cfg.objects)
+            plane_hit = ray_plane_intersection(gaze_origin_world, gaze_world, cfg.plane.point, cfg.plane.normal)
+            object_hit = intersect_scene_objects(gaze_origin_world, gaze_world, cfg.objects)
             profiler.mark("intersections")
 
             render_ray_length = cfg.render.ray_length
@@ -110,7 +119,8 @@ def run_app(mode: str, config_path: str | Path) -> int:
 
             viewer.update_dynamic(
                 head_transform_world=head_world,
-                face_center_world=face_world,
+                head_origin_world=head_origin_world,
+                gaze_origin_world=gaze_origin_world,
                 gaze_direction_world=gaze_world,
                 ray_length=render_ray_length,
                 head_axis_length=cfg.render.head_axis_length,

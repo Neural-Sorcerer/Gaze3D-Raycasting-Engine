@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 
 import numpy as np
@@ -148,7 +149,13 @@ else:
 class SceneViewer:
     """OpenGL scene for gaze ray visualization."""
 
-    def __init__(self, config: AppConfig, mode: str, control_callback: ControlCallback | None = None) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        mode: str,
+        control_callback: ControlCallback | None = None,
+        face_mesh_points_head: npt.ArrayLike | None = None,
+    ) -> None:
         if gl is None or QtWidgets is None or QtCore is None:
             raise RuntimeError(
                 "PyQtGraph OpenGL dependencies are missing. Install requirements.txt first."
@@ -157,6 +164,14 @@ class SceneViewer:
         self._config = config
         self._mode = mode
         self._control_callback = control_callback
+        if face_mesh_points_head is None:
+            self._face_mesh_points_head = np.empty((0, 3), dtype=np.float64)
+        else:
+            points = np.asarray(face_mesh_points_head, dtype=np.float64)
+            if points.ndim != 2 or points.shape[1] != 3:
+                self._face_mesh_points_head = np.empty((0, 3), dtype=np.float64)
+            else:
+                self._face_mesh_points_head = points.copy()
 
         self.qt_app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
         self.view = _InteractiveGLView(self._on_key_press)
@@ -164,6 +179,13 @@ class SceneViewer:
         self.view.resize(1280, 800)
         self.view.setBackgroundColor((10, 16, 25))
         self.view.setCameraPosition(distance=9.0, elevation=20.0, azimuth=-40.0)
+        self._smooth_orbit_enabled = False
+        self._smooth_orbit_speed_deg_per_sec = 18.0
+        self._smooth_orbit_last_ts: float | None = None
+        self._smooth_orbit_timer = QtCore.QTimer(self.view)
+        self._smooth_orbit_timer.setTimerType(QtCore.Qt.PreciseTimer)
+        self._smooth_orbit_timer.setInterval(16)
+        self._smooth_orbit_timer.timeout.connect(self._tick_smooth_orbit)
 
         self._empty_pos = np.empty((0, 3), dtype=np.float64)
         self._head_axis_x = np.zeros((2, 3), dtype=np.float64)
@@ -171,6 +193,7 @@ class SceneViewer:
         self._head_axis_z = np.zeros((2, 3), dtype=np.float64)
         self._gaze_line = np.zeros((2, 3), dtype=np.float64)
         self._face_pos = np.zeros((1, 3), dtype=np.float64)
+        self._face_mesh_pos = np.zeros_like(self._face_mesh_points_head)
         self._plane_hit_pos = np.zeros((1, 3), dtype=np.float64)
         self._object_hit_pos = np.zeros((1, 3), dtype=np.float64)
 
@@ -189,6 +212,7 @@ class SceneViewer:
         return int(self.qt_app.exec_())
 
     def close(self) -> None:
+        self._smooth_orbit_timer.stop()
         self.view.close()
 
     def _add_group(self, name: str, items: list) -> None:
@@ -360,6 +384,13 @@ class SceneViewer:
         )
 
         self._face_item = gl.GLScatterPlotItem(pos=self._face_pos, color=(1.0, 0.6, 0.2, 1.0), size=10)
+        self._face_mesh_item = None
+        if self._face_mesh_points_head.shape[0] > 0:
+            self._face_mesh_item = gl.GLScatterPlotItem(
+                pos=self._face_mesh_pos,
+                color=(0.98, 0.84, 0.64, 0.26),
+                size=4.0,
+            )
         self._plane_hit_item = gl.GLScatterPlotItem(pos=self._empty_pos, color=(0.0, 1.0, 1.0, 1.0), size=12)
         self._object_hit_item = gl.GLScatterPlotItem(pos=self._empty_pos, color=(1.0, 0.2, 1.0, 1.0), size=12)
 
@@ -373,9 +404,14 @@ class SceneViewer:
             self._object_hit_item,
         ):
             self.view.addItem(item)
+        if self._face_mesh_item is not None:
+            self.view.addItem(self._face_mesh_item)
 
         self._add_group("head_frame", [self._head_x_item, self._head_y_item, self._head_z_item])
-        self._add_group("face_point", [self._face_item])
+        face_group_items = [self._face_item]
+        if self._face_mesh_item is not None:
+            face_group_items.append(self._face_mesh_item)
+        self._add_group("face_point", face_group_items)
         self._add_group("gaze_ray", [self._gaze_item])
         self._add_group("plane_hit", [self._plane_hit_item])
         self._add_group("object_hit", [self._object_hit_item])
@@ -383,6 +419,10 @@ class SceneViewer:
     def _on_key_press(self, key: int) -> bool:
         if QtCore is None:
             return False
+
+        if key == QtCore.Qt.Key_R:
+            self._toggle_smooth_orbit()
+            return True
 
         toggles = {
             QtCore.Qt.Key_1: "world_axes",
@@ -421,23 +461,45 @@ class SceneViewer:
 
         return False
 
+    def _toggle_smooth_orbit(self) -> None:
+        self._smooth_orbit_enabled = not self._smooth_orbit_enabled
+        if self._smooth_orbit_enabled:
+            self._smooth_orbit_last_ts = time.perf_counter()
+            self._smooth_orbit_timer.start()
+        else:
+            self._smooth_orbit_timer.stop()
+            self._smooth_orbit_last_ts = None
+
+    def _tick_smooth_orbit(self) -> None:
+        if not self._smooth_orbit_enabled:
+            return
+        now = time.perf_counter()
+        if self._smooth_orbit_last_ts is None:
+            self._smooth_orbit_last_ts = now
+            return
+        dt = max(0.0, min(0.1, now - self._smooth_orbit_last_ts))
+        self._smooth_orbit_last_ts = now
+        self.view.orbit(self._smooth_orbit_speed_deg_per_sec * dt, 0.0)
+
     def print_controls(self) -> None:
         print(
-            "Controls: 1 world, 2 frustum, 3 head, 4 face, 5 gaze, 6 plane hit, "
-            "7 object hit, 8 objects, 9 plane, 0 ray-clip, F filter, [/] ema, -/= beta, ,/. min cutoff"
+            "Controls: 1 world, 2 frustum, 3 head, 4 eye-center/face, 5 gaze, 6 plane hit, "
+            "7 object hit, 8 objects, 9 plane, 0 ray-clip, R smooth-orbit, F filter, "
+            "[/] ema, -/= beta, ,/. min cutoff"
         )
 
     def update_dynamic(
         self,
         head_transform_world: RigidTransform,
-        face_center_world: Vector3,
+        head_origin_world: Vector3,
+        gaze_origin_world: Vector3,
         gaze_direction_world: Vector3,
         ray_length: float,
         head_axis_length: float,
         plane_hit: IntersectionHit | None,
         object_hit: IntersectionHit | None,
     ) -> None:
-        origin = face_center_world
+        origin = head_origin_world
         rot = head_transform_world.rotation
 
         self._head_axis_x[0] = origin
@@ -452,12 +514,15 @@ class SceneViewer:
         self._head_z_item.setData(pos=self._head_axis_z)
 
         gaze = normalize_vector(gaze_direction_world)
-        self._gaze_line[0] = origin
-        self._gaze_line[1] = origin + gaze * ray_length
+        self._gaze_line[0] = gaze_origin_world
+        self._gaze_line[1] = gaze_origin_world + gaze * ray_length
         self._gaze_item.setData(pos=self._gaze_line)
 
-        self._face_pos[0] = origin
+        self._face_pos[0] = gaze_origin_world
         self._face_item.setData(pos=self._face_pos)
+        if self._face_mesh_item is not None:
+            self._face_mesh_pos[:] = (rot @ self._face_mesh_points_head.T).T + head_origin_world
+            self._face_mesh_item.setData(pos=self._face_mesh_pos)
 
         if plane_hit is None:
             self._plane_hit_item.setData(pos=self._empty_pos)

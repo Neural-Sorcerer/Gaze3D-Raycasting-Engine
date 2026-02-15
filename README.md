@@ -5,7 +5,8 @@
 ## Features
 
 - Real-time OpenGL viewer using `pyqtgraph.opengl`.
-- Coordinate frames: world, camera frustum, head frame, face center.
+- Coordinate frames: world, camera frustum, head frame, eye-center gaze origin.
+- Head-anchored 3D face mesh overlay from MediaPipe 468 landmark template.
 - Geometry: ray-plane, ray-AABB, ray-sphere intersections.
 - Frame transforms: camera frame -> world frame conversion for pose and rays.
 - Data source plugins: `synthetic`, `webcam` (mock estimator placeholder), `recorded` (CSV/JSON).
@@ -72,7 +73,7 @@ Given:
 Compute:
 
 - `T_WH = T_WC ∘ T_CH`
-- `o_W = translation(T_WH)` (ray origin at face center)
+- `o_W = T_WH * o_eye` (ray origin at eye center in head frame)
 - `d_W = normalize(R_WH * g_H)` (ray direction)
 
 Intersections:
@@ -92,13 +93,14 @@ Camera pose in YAML supports either:
 - `1`: toggle world axes/grid
 - `2`: toggle camera frustum/axes
 - `3`: toggle head frame
-- `4`: toggle face center point
+- `4`: toggle eye-center marker + face mesh
 - `5`: toggle gaze ray
 - `6`: toggle plane hit point
 - `7`: toggle object hit point
 - `8`: toggle objects
 - `9`: toggle plane outline
 - `0`: toggle gaze-ray clipping at first object hit (`on` by default)
+- `R`: toggle smooth scene orbit around center
 - `F`: cycle filter mode (`none -> ema -> one_euro`)
 - `[` / `]`: EMA alpha down/up
 - `-` / `=`: OneEuro beta down/up
