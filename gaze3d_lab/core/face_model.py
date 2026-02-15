@@ -14,6 +14,8 @@ RIGHT_EYE_LANDMARKS = np.array(
     [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246],
     dtype=np.int32,
 )
+# Align MediaPipe template orientation with viewer head-frame convention.
+FACE_TEMPLATE_AXIS_FLIP = np.array([1.0, -1.0, 1.0], dtype=np.float64)
 
 
 def _empty_face_mesh() -> npt.NDArray[np.float64]:
@@ -30,7 +32,7 @@ def load_face_mesh_template_m() -> npt.NDArray[np.float64]:
     points = np.asarray(face_mesh_template_3D_m, dtype=np.float64)
     if points.ndim != 2 or points.shape[1] != 3:
         return _empty_face_mesh()
-    return points.copy()
+    return (points * FACE_TEMPLATE_AXIS_FLIP).copy()
 
 
 def estimate_eye_center_head(face_mesh_points_head: npt.ArrayLike) -> Vector3:

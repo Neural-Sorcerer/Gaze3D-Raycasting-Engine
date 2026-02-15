@@ -388,8 +388,8 @@ class SceneViewer:
         if self._face_mesh_points_head.shape[0] > 0:
             self._face_mesh_item = gl.GLScatterPlotItem(
                 pos=self._face_mesh_pos,
-                color=(0.98, 0.84, 0.64, 0.26),
-                size=4.0,
+                color=(1.0, 1.0, 1.0, 1.0),
+                size=1.0,
             )
         self._plane_hit_item = gl.GLScatterPlotItem(pos=self._empty_pos, color=(0.0, 1.0, 1.0, 1.0), size=12)
         self._object_hit_item = gl.GLScatterPlotItem(pos=self._empty_pos, color=(1.0, 0.2, 1.0, 1.0), size=12)
