@@ -130,7 +130,7 @@ python -m gaze3d_lab --mode recorded --config config/default.yaml
 ## Tests
 
 ```bash
-pytest -q
+python -m pytest -q
 ```
 
 ## How To Add a Real AI Model Later

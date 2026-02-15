@@ -23,9 +23,9 @@ def _empty_face_mesh() -> npt.NDArray[np.float64]:
 
 
 def load_face_mesh_template_m() -> npt.NDArray[np.float64]:
-    """Load MediaPipe face template in meters from project-level template file."""
+    """Load MediaPipe face template in meters from packaged template module."""
     try:
-        from face_mesh_template_3D import face_mesh_template_3D_m
+        from .face_mesh_template_3D import face_mesh_template_3D_m
     except Exception:
         return _empty_face_mesh()
 
