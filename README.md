@@ -24,6 +24,25 @@ python -m gaze3d_lab --mode webcam --config config/default.yaml
 python -m gaze3d_lab --mode recorded --config config/default.yaml
 ```
 
+## Keyboard Controls
+
+- `1`: toggle world axes/grid
+- `2`: toggle camera frustum/axes
+- `3`: toggle head frame
+- `4`: toggle eye-center marker + face mesh
+- `5`: toggle gaze ray
+- `6`: toggle plane hit point
+- `7`: toggle object hit point
+- `8`: toggle objects
+- `9`: toggle plane outline
+- `0`: toggle gaze-ray clipping at first object hit (`on` by default)
+- `R`: toggle smooth scene orbit around center
+- `F`: cycle filter mode (`none -> ema -> one_euro`)
+- `[` / `]`: EMA alpha down/up
+- `-` / `=`: OneEuro beta down/up
+- `,` / `.`: OneEuro min cutoff down/up
+- `H`: print control summary
+
 ## Tests
 
 ```bash
@@ -99,25 +118,6 @@ Camera pose in YAML supports either:
 
 - `pose_world.euler_deg` (legacy Euler XYZ)
 - `pose_world.look_at` (recommended, avoids direction mistakes)
-
-## Keyboard Controls
-
-- `1`: toggle world axes/grid
-- `2`: toggle camera frustum/axes
-- `3`: toggle head frame
-- `4`: toggle eye-center marker + face mesh
-- `5`: toggle gaze ray
-- `6`: toggle plane hit point
-- `7`: toggle object hit point
-- `8`: toggle objects
-- `9`: toggle plane outline
-- `0`: toggle gaze-ray clipping at first object hit (`on` by default)
-- `R`: toggle smooth scene orbit around center
-- `F`: cycle filter mode (`none -> ema -> one_euro`)
-- `[` / `]`: EMA alpha down/up
-- `-` / `=`: OneEuro beta down/up
-- `,` / `.`: OneEuro min cutoff down/up
-- `H`: print control summary
 
 ## How To Add a Real AI Model Later
 

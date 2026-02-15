@@ -7,6 +7,7 @@ camera:
     width: 1280
     height: 720
   pose_world:
+    # Camera mounted above the center TV.
     translation: [0.0, 1.66, 1.24]
     look_at:
       target: [0.0, 0.35, 0.82]
@@ -19,6 +20,8 @@ scene:
     size: [6.0, 6.0]
     color: [0.2, 0.8, 1.0, 0.20]
   objects:
+    # Center TV is farther back. Side TVs are yawed inward 30 deg and touch center at inner edges.
+    # Frame bezel is ~1% of TV width and height.
     - type: obb
       name: tv_left_frame
       center: [-1.57, 1.24, 0.86]
