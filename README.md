@@ -2,6 +2,34 @@
 
 `gaze3d-lab` is a production-style Python project for real-time 3D gaze visualization. It renders world/camera/head frames, gaze rays, and point-of-gaze intersections against a plane plus simple scene meshes (AABBs and spheres), with pluggable data sources and runtime smoothing controls.
 
+![gaze3d-lab demo](docs/demo.gif "gaze3d-lab demo")
+
+## Install
+
+Python 3.10+ on Ubuntu 20.04+:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+## Run
+
+```bash
+python -m gaze3d_lab --mode synthetic --config config/default.yaml
+python -m gaze3d_lab --mode synthetic --config config/synthetic_stress.yaml
+python -m gaze3d_lab --mode webcam --config config/default.yaml
+python -m gaze3d_lab --mode recorded --config config/default.yaml
+```
+
+## Tests
+
+```bash
+python -m pytest -q
+```
+
 ## Features
 
 - Real-time OpenGL viewer using `pyqtgraph.opengl`.
@@ -16,22 +44,6 @@
 - Smoothing: `EMA` and `OneEuroFilter`, tunable at runtime via keyboard.
 - Lightweight performance profiling: FPS + per-stage timings.
 - Clean modular architecture and pytest coverage for core geometry math.
-
-## Demo GIF Instructions
-
-1. Run synthetic mode (see Quick Start).
-2. Record a short clip with your preferred recorder (for Ubuntu, `peek` works well).
-3. Convert MP4 to GIF with ffmpeg:
-
-   ```bash
-   ffmpeg -i demo.mp4 -vf "fps=20,scale=1280:-1:flags=lanczos" -loop 0 docs/demo.gif
-   ```
-
-4. Add to README:
-
-   ```markdown
-   ![gaze3d-lab demo](docs/demo.gif)
-   ```
 
 ## Architecture
 
@@ -107,32 +119,6 @@ Camera pose in YAML supports either:
 - `,` / `.`: OneEuro min cutoff down/up
 - `H`: print control summary
 
-## Install
-
-Python 3.10+ on Ubuntu 20.04+:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-
-## Run
-
-```bash
-python -m gaze3d_lab --mode synthetic --config config/default.yaml
-python -m gaze3d_lab --mode synthetic --config config/synthetic_stress.yaml
-python -m gaze3d_lab --mode webcam --config config/default.yaml
-python -m gaze3d_lab --mode recorded --config config/default.yaml
-```
-
-## Tests
-
-```bash
-python -m pytest -q
-```
-
 ## How To Add a Real AI Model Later
 
 1. Keep `DataSource` interface unchanged (`next_sample(timestamp) -> GazeSample`).
@@ -145,4 +131,18 @@ python -m pytest -q
    - `gaze_direction_head` vector
 4. Existing smoothing, geometry, and rendering pipeline continues to work unchanged.
 
-![gaze3d-lab demo](docs/demo.gif "gaze3d-lab demo")
+## Demo GIF Instructions
+
+1. Run synthetic mode (see Quick Start).
+2. Record a short clip with your preferred recorder (for Ubuntu, `peek` works well).
+3. Convert MP4 to GIF with ffmpeg:
+
+   ```bash
+   ffmpeg -i demo.mp4 -vf "fps=20,scale=1280:-1:flags=lanczos" -loop 0 docs/demo.gif
+   ```
+
+4. Add to README:
+
+   ```markdown
+   ![gaze3d-lab demo](docs/demo.gif)
+   ```
