@@ -144,3 +144,5 @@ pytest -q
    - `head_transform_cam` (`R_CH`, `t_CH`)
    - `gaze_direction_head` vector
 4. Existing smoothing, geometry, and rendering pipeline continues to work unchanged.
+
+![gaze3d-lab demo](docs/demo.gif "gaze3d-lab demo")
