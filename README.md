@@ -37,11 +37,12 @@ python -m gaze3d_lab --mode recorded --config config/default.yaml
 - `9`: toggle plane outline
 - `0`: toggle gaze-ray clipping at first object hit (`on` by default)
 - `R`: toggle smooth scene orbit around center
+- `S`: start/stop lossless recording at the current viewer resolution (`1920x1080` by default)
 - `F`: cycle filter mode (`none -> ema -> one_euro`)
 - `[` / `]`: EMA alpha down/up
 - `-` / `=`: OneEuro beta down/up
 - `,` / `.`: OneEuro min cutoff down/up
-- `H`: print control summary
+- `Z` / `H`: print control summary to the terminal
 
 ## Tests
 
@@ -61,6 +62,7 @@ python -m pytest -q
 - Advanced default scene with 3 TV targets and off-center decorative spheres/cubes.
 - Left/right TVs are angled inward (30 deg) with OBB geometry support for realistic layout tests.
 - Smoothing: `EMA` and `OneEuroFilter`, tunable at runtime via keyboard.
+- Built-in lossless `PNG`/`MOV` recording that saves the current viewer resolution.
 - Lightweight performance profiling: FPS + per-stage timings.
 - Clean modular architecture and pytest coverage for core geometry math.
 
@@ -134,11 +136,11 @@ Camera pose in YAML supports either:
 ## Demo GIF Instructions
 
 1. Run synthetic mode (see Quick Start).
-2. Record a short clip with your preferred recorder (for Ubuntu, `peek` works well).
-3. Convert MP4 to GIF with ffmpeg:
+2. Press `S` to start the built-in lossless recorder, then press `S` again to save the clip under `recordings/`.
+3. Convert the saved MOV file to GIF with ffmpeg:
 
    ```bash
-   ffmpeg -i demo.mp4 -vf "fps=20,scale=1280:-1:flags=lanczos" -loop 0 docs/demo.gif
+   ffmpeg -i recordings/gaze3d_lab_synthetic_YYYYMMDD_HHMMSS.mov -vf "fps=20,scale=1280:-1:flags=lanczos" -loop 0 docs/demo.gif
    ```
 
 4. Add to README:

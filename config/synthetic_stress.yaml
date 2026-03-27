@@ -139,6 +139,6 @@ data_sources:
     speed: 1.0
 
 render:
-  target_fps: 60
+  target_fps: 30
   ray_length: 6.4
   head_axis_length: 0.16

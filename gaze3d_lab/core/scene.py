@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -9,7 +10,7 @@ from .calibration import CameraIntrinsics
 from .transforms import RigidTransform, normalize_vector
 
 Vector3 = npt.NDArray[np.float64]
-ColorRGBA = tuple[float, float, float, float]
+ColorRGBA = Tuple[float, float, float, float]
 
 
 @dataclass
@@ -69,7 +70,7 @@ class OBBObjectConfig:
             raise ValueError(f"Invalid OBB size for {self.name}")
 
 
-SceneObjectConfig = AABBObjectConfig | OBBObjectConfig | SphereObjectConfig
+SceneObjectConfig = Union[AABBObjectConfig, OBBObjectConfig, SphereObjectConfig]
 
 
 @dataclass

@@ -131,6 +131,7 @@ def run_app(mode: str, config_path: str | Path) -> int:
                 plane_hit=render_plane_hit,
                 object_hit=object_hit,
             )
+            viewer.capture_recording_frame()
             profiler.mark("render")
             fps = profiler.end_frame()
 

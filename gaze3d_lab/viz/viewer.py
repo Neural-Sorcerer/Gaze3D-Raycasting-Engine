@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
 import time
-from collections.abc import Callable
+from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import numpy.typing as npt
@@ -11,10 +14,11 @@ from gaze3d_lab.core.transforms import RigidTransform, euler_xyz_to_matrix, norm
 from gaze3d_lab.geometry.intersections import IntersectionHit
 
 try:  # pragma: no cover - UI imports not exercised by unit tests.
-    from PyQt5 import QtCore, QtWidgets
+    from PyQt5 import QtCore, QtGui, QtWidgets
     import pyqtgraph.opengl as gl
 except ImportError as exc:  # pragma: no cover
     QtCore = None
+    QtGui = None
     QtWidgets = None
     gl = None
     _IMPORT_ERROR = exc
@@ -23,6 +27,33 @@ else:
 
 Vector3 = npt.NDArray[np.float64]
 ControlCallback = Callable[[str], None]
+_RECORDING_CODEC = "png"
+_RECORDING_CONTAINER = "mov"
+_RECORDING_EXTENSION = ".mov"
+_DEFAULT_VIEW_WIDTH = 1920
+_DEFAULT_VIEW_HEIGHT = 1080
+_CONTROLS_TEXT = "\n".join(
+    (
+        "Controls:",
+        "  Z/H : help",
+        "  S   : lossless record start/stop",
+        "  1   : world",
+        "  2   : frustum",
+        "  3   : head",
+        "  4   : eye-center/face",
+        "  5   : gaze",
+        "  6   : plane hit",
+        "  7   : object hit",
+        "  8   : objects",
+        "  9   : plane",
+        "  0   : ray-clip",
+        "  R   : smooth-orbit",
+        "  F   : filter",
+        "  [/] : ema",
+        "  -/= : beta",
+        "  ,/. : min cutoff",
+    )
+)
 
 
 def _segments_to_line_pos(segments: list[tuple[Vector3, Vector3]]) -> npt.NDArray[np.float64]:
@@ -126,6 +157,112 @@ def _build_obb_mesh(
     return vertices_world, faces
 
 
+def _build_recording_output_path(output_dir: Path, mode: str, timestamp: str | None = None) -> Path:
+    stamp = timestamp or time.strftime("%Y%m%d_%H%M%S")
+    stem = f"gaze3d_lab_{mode}_{stamp}"
+    candidate = output_dir / f"{stem}{_RECORDING_EXTENSION}"
+    index = 1
+    while candidate.exists():
+        candidate = output_dir / f"{stem}_{index:02d}{_RECORDING_EXTENSION}"
+        index += 1
+    return candidate
+
+
+class _LosslessVideoRecorder:
+    def __init__(self, output_path: Path, fps: float) -> None:
+        self.output_path = output_path
+        self.fps = max(1.0, float(fps))
+        self.frame_count = 0
+        self._frame_size: tuple[int, int] | None = None
+        self._process = None
+
+    @property
+    def frame_size(self) -> tuple[int, int] | None:
+        return self._frame_size
+
+    def _start_process(self, width: int, height: int) -> None:
+        ffmpeg_path = shutil.which("ffmpeg")
+        if ffmpeg_path is None:
+            raise RuntimeError("ffmpeg is required for recording but was not found in PATH.")
+
+        self.output_path.parent.mkdir(parents=True, exist_ok=True)
+        self._process = subprocess.Popen(
+            [
+                ffmpeg_path,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "rgb24",
+                "-video_size",
+                f"{width}x{height}",
+                "-framerate",
+                f"{self.fps:.6f}",
+                "-i",
+                "-",
+                "-an",
+                "-c:v",
+                _RECORDING_CODEC,
+                "-pix_fmt",
+                "rgb24",
+                "-compression_level",
+                "1",
+                str(self.output_path),
+            ],
+            stdin=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if self._process.stdin is None:
+            raise RuntimeError("Failed to open ffmpeg stdin for recording.")
+        self._frame_size = (width, height)
+
+    def write_frame(self, frame_rgb: npt.NDArray[np.uint8]) -> None:
+        if frame_rgb.ndim != 3 or frame_rgb.shape[2] != 3:
+            raise ValueError("Expected RGB frame data with shape (height, width, 3).")
+
+        height, width = frame_rgb.shape[:2]
+        if height <= 0 or width <= 0:
+            raise ValueError("Cannot record an empty frame.")
+
+        if self._process is None:
+            self._start_process(width, height)
+        elif self._frame_size != (width, height):
+            raise RuntimeError(
+                "Viewer resolution changed during recording. Stop and restart to use the new size."
+            )
+
+        assert self._process is not None
+        assert self._process.stdin is not None
+        try:
+            self._process.stdin.write(np.ascontiguousarray(frame_rgb).tobytes())
+        except BrokenPipeError as exc:
+            raise RuntimeError("ffmpeg exited unexpectedly while recording.") from exc
+        self.frame_count += 1
+
+    def finish(self) -> tuple[Path, int, tuple[int, int] | None]:
+        if self._process is not None:
+            if self._process.stdin is not None:
+                self._process.stdin.close()
+            stderr_output = b""
+            if self._process.stderr is not None:
+                stderr_output = self._process.stderr.read()
+            return_code = self._process.wait()
+            self._process = None
+            if return_code != 0:
+                message = stderr_output.decode("utf-8", errors="replace").strip()
+                if self.output_path.exists():
+                    self.output_path.unlink()
+                if message:
+                    raise RuntimeError(message)
+                raise RuntimeError(f"ffmpeg exited with code {return_code}.")
+        if self.frame_count == 0 and self.output_path.exists():
+            self.output_path.unlink()
+        return self.output_path, self.frame_count, self._frame_size
+
+
 if gl is not None:
 
     class _InteractiveGLView(gl.GLViewWidget):  # type: ignore[misc]
@@ -174,13 +311,16 @@ class SceneViewer:
                 self._face_mesh_points_head = points.copy()
 
         self.qt_app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        self.qt_app.aboutToQuit.connect(self._stop_recording)
         self.view = _InteractiveGLView(self._on_key_press)
-        self.view.setWindowTitle("gaze3d-lab")
-        self.view.resize(1280, 800)
+        self.view.resize(_DEFAULT_VIEW_WIDTH, _DEFAULT_VIEW_HEIGHT)
         self.view.setBackgroundColor((10, 16, 25))
         self.view.setCameraPosition(distance=9.0, elevation=20.0, azimuth=-40.0)
+        self._status_text = f"mode={mode}"
+        self._recording: _LosslessVideoRecorder | None = None
+        self._refresh_window_title()
         self._smooth_orbit_enabled = False
-        self._smooth_orbit_speed_deg_per_sec = 18.0
+        self._smooth_orbit_speed_deg_per_sec = 10.0
         self._smooth_orbit_last_ts: float | None = None
         self._smooth_orbit_timer = QtCore.QTimer(self.view)
         self._smooth_orbit_timer.setTimerType(QtCore.Qt.PreciseTimer)
@@ -213,6 +353,7 @@ class SceneViewer:
 
     def close(self) -> None:
         self._smooth_orbit_timer.stop()
+        self._stop_recording()
         self.view.close()
 
     def _add_group(self, name: str, items: list) -> None:
@@ -226,6 +367,14 @@ class SceneViewer:
 
     def _toggle_group(self, name: str) -> None:
         self._set_group_visible(name, not self._visibility.get(name, True))
+
+    def _refresh_window_title(self) -> None:
+        title = "gaze3d-lab"
+        if self._recording is not None:
+            title += " [REC]"
+        if self._status_text:
+            title += f" | {self._status_text}"
+        self.view.setWindowTitle(title)
 
     def _build_static_scene(self) -> None:
         assert gl is not None
@@ -423,6 +572,9 @@ class SceneViewer:
         if key == QtCore.Qt.Key_R:
             self._toggle_smooth_orbit()
             return True
+        if key == QtCore.Qt.Key_S:
+            self.toggle_recording()
+            return True
 
         toggles = {
             QtCore.Qt.Key_1: "world_axes",
@@ -455,7 +607,7 @@ class SceneViewer:
                 self._control_callback(action)
             return True
 
-        if key == QtCore.Qt.Key_H:
+        if key in (QtCore.Qt.Key_H, QtCore.Qt.Key_Z):
             self.print_controls()
             return True
 
@@ -481,12 +633,116 @@ class SceneViewer:
         self._smooth_orbit_last_ts = now
         self.view.orbit(self._smooth_orbit_speed_deg_per_sec * dt, 0.0)
 
-    def print_controls(self) -> None:
+    def toggle_recording(self) -> None:
+        if self._recording is None:
+            output_path = _build_recording_output_path(Path.cwd() / "recordings", self._mode)
+            self._recording = _LosslessVideoRecorder(
+                output_path=output_path,
+                fps=float(self._config.render.target_fps),
+            )
+            self._refresh_window_title()
+            target_size = (max(1, int(self.view.width())), max(1, int(self.view.height())))
+            print(
+                f"[gaze3d-lab] recording started: {output_path.resolve()} | "
+                f"codec={_RECORDING_CODEC}/{_RECORDING_CONTAINER} | "
+                f"target_resolution={target_size[0]}x{target_size[1]} | waiting for rendered frames"
+            )
+            return
+        self._stop_recording()
+
+    def _stop_recording(self, reason: str | None = None) -> None:
+        recorder = self._recording
+        if recorder is None:
+            return
+
+        self._recording = None
+        self._refresh_window_title()
+
+        try:
+            output_path, frame_count, frame_size = recorder.finish()
+        except Exception as exc:
+            print(f"[gaze3d-lab] failed to finalize recording: {exc}")
+            return
+
+        if frame_count == 0:
+            message = "[gaze3d-lab] recording stopped before any frames were captured"
+            if reason is not None:
+                message += f" | reason={reason}"
+            print(message)
+            return
+
+        size_text = ""
+        if frame_size is not None:
+            size_text = f" | resolution={frame_size[0]}x{frame_size[1]}"
+        if reason is not None:
+            print(
+                f"[gaze3d-lab] recording saved with warning: {output_path.resolve()} | "
+                f"frames={frame_count}{size_text} | reason={reason}"
+            )
+            return
         print(
-            "Controls: 1 world, 2 frustum, 3 head, 4 eye-center/face, 5 gaze, 6 plane hit, "
-            "7 object hit, 8 objects, 9 plane, 0 ray-clip, R smooth-orbit, F filter, "
-            "[/] ema, -/= beta, ,/. min cutoff"
+            f"[gaze3d-lab] recording saved: {output_path.resolve()} | "
+            f"frames={frame_count}{size_text}"
         )
+
+    def _capture_frame_image(self) -> QtGui.QImage | None:
+        if QtGui is None or QtCore is None:
+            return None
+        if hasattr(self.view, "grabFramebuffer"):
+            image = self.view.grabFramebuffer()
+        else:
+            pixmap = self.view.grab()
+            if pixmap.isNull():
+                return None
+            image = pixmap.toImage()
+        if image.isNull():
+            return None
+        target_width = max(1, int(self.view.width()))
+        target_height = max(1, int(self.view.height()))
+        if image.width() != target_width or image.height() != target_height:
+            image = image.scaled(
+                target_width,
+                target_height,
+                QtCore.Qt.IgnoreAspectRatio,
+                QtCore.Qt.SmoothTransformation,
+            )
+        return image
+
+    @staticmethod
+    def _qimage_to_rgb_array(image: QtGui.QImage) -> npt.NDArray[np.uint8]:
+        if QtGui is None:
+            return np.empty((0, 0, 3), dtype=np.uint8)
+        rgb_image = image.convertToFormat(QtGui.QImage.Format_RGB888)
+        width = rgb_image.width()
+        height = rgb_image.height()
+        if width <= 0 or height <= 0:
+            return np.empty((0, 0, 3), dtype=np.uint8)
+
+        bits = rgb_image.bits()
+        size_in_bytes = (
+            rgb_image.sizeInBytes() if hasattr(rgb_image, "sizeInBytes") else rgb_image.byteCount()
+        )
+        if hasattr(bits, "setsize"):
+            bits.setsize(size_in_bytes)
+
+        frame = np.frombuffer(bits, dtype=np.uint8).reshape((height, rgb_image.bytesPerLine()))
+        return frame[:, : width * 3].reshape((height, width, 3)).copy()
+
+    def capture_recording_frame(self) -> None:
+        if self._recording is None:
+            return
+
+        image = self._capture_frame_image()
+        if image is None:
+            return
+
+        try:
+            self._recording.write_frame(self._qimage_to_rgb_array(image))
+        except Exception as exc:
+            self._stop_recording(reason=str(exc))
+
+    def print_controls(self) -> None:
+        print(_CONTROLS_TEXT)
 
     def update_dynamic(
         self,
@@ -542,8 +798,9 @@ class SceneViewer:
         geom_ms = stage_ms.get("intersections", 0.0)
         render_ms = stage_ms.get("render", 0.0)
 
-        self.view.setWindowTitle(
-            f"gaze3d-lab | mode={self._mode} | fps={fps:5.1f} | "
+        self._status_text = (
+            f"mode={self._mode} | fps={fps:5.1f} | "
             f"src={source_ms:5.2f}ms filt={filter_ms:5.2f}ms geom={geom_ms:5.2f}ms render={render_ms:5.2f}ms | "
             f"{filter_info}"
         )
+        self._refresh_window_title()
