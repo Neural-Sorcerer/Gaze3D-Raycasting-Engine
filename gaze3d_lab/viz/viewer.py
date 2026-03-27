@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Optional, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -26,12 +26,29 @@ else:
     _IMPORT_ERROR = None
 
 Vector3 = npt.NDArray[np.float64]
-ControlCallback = Callable[[str], None]
+ControlValue = Optional[Union[str, bool, float]]
+ControlCallback = Callable[[str, ControlValue], None]
 _RECORDING_CODEC = "png"
 _RECORDING_CONTAINER = "mov"
 _RECORDING_EXTENSION = ".mov"
 _DEFAULT_VIEW_WIDTH = 1920
 _DEFAULT_VIEW_HEIGHT = 1080
+_FILTER_MODE_OPTIONS = (
+    ("None", "none"),
+    ("EMA", "ema"),
+    ("One Euro", "one_euro"),
+)
+_VISIBILITY_GROUP_OPTIONS = (
+    ("world_axes", "World axes"),
+    ("camera_frustum", "Camera frustum"),
+    ("head_frame", "Head frame"),
+    ("face_point", "Eye-center / face"),
+    ("gaze_ray", "Gaze ray"),
+    ("plane_hit", "Plane hit"),
+    ("object_hit", "Object hit"),
+    ("objects", "Objects"),
+    ("plane", "Plane"),
+)
 _CONTROLS_TEXT = "\n".join(
     (
         "Controls:",
@@ -292,6 +309,7 @@ class SceneViewer:
         mode: str,
         control_callback: ControlCallback | None = None,
         face_mesh_points_head: npt.ArrayLike | None = None,
+        ray_clip_enabled: bool = True,
     ) -> None:
         if gl is None or QtWidgets is None or QtCore is None:
             raise RuntimeError(
@@ -312,13 +330,26 @@ class SceneViewer:
 
         self.qt_app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
         self.qt_app.aboutToQuit.connect(self._stop_recording)
+        self._main_window = QtWidgets.QMainWindow()
         self.view = _InteractiveGLView(self._on_key_press)
+        self._main_window.setCentralWidget(self.view)
         self.view.resize(_DEFAULT_VIEW_WIDTH, _DEFAULT_VIEW_HEIGHT)
+        self.view.setFocusPolicy(QtCore.Qt.StrongFocus)
         self.view.setBackgroundColor((10, 16, 25))
         self.view.setCameraPosition(distance=9.0, elevation=20.0, azimuth=-40.0)
+        self._main_window.resize(_DEFAULT_VIEW_WIDTH, _DEFAULT_VIEW_HEIGHT)
         self._status_text = f"mode={mode}"
         self._recording: _LosslessVideoRecorder | None = None
-        self._refresh_window_title()
+        self._group_checkboxes: dict[str, object] = {}
+        self._ray_clip_checkbox = None
+        self._record_button = None
+        self._smooth_orbit_checkbox = None
+        self._smooth_orbit_speed_spin = None
+        self._filter_mode_combo = None
+        self._ema_alpha_spin = None
+        self._one_euro_beta_spin = None
+        self._one_euro_min_cutoff_spin = None
+        self._status_label = None
         self._smooth_orbit_enabled = False
         self._smooth_orbit_speed_deg_per_sec = 10.0
         self._smooth_orbit_last_ts: float | None = None
@@ -342,7 +373,10 @@ class SceneViewer:
 
         self._build_static_scene()
         self._build_dynamic_items()
-        self.view.show()
+        self._build_control_panel(ray_clip_enabled)
+        self._refresh_window_title()
+        self._main_window.show()
+        self.view.setFocus()
 
     @property
     def qtcore(self):
@@ -354,7 +388,7 @@ class SceneViewer:
     def close(self) -> None:
         self._smooth_orbit_timer.stop()
         self._stop_recording()
-        self.view.close()
+        self._main_window.close()
 
     def _add_group(self, name: str, items: list) -> None:
         self._groups[name] = items
@@ -364,6 +398,11 @@ class SceneViewer:
         for item in self._groups.get(name, []):
             item.setVisible(visible)
         self._visibility[name] = visible
+        checkbox = self._group_checkboxes.get(name)
+        if checkbox is not None and checkbox.isChecked() != visible:
+            blocked = checkbox.blockSignals(True)
+            checkbox.setChecked(visible)
+            checkbox.blockSignals(blocked)
 
     def _toggle_group(self, name: str) -> None:
         self._set_group_visible(name, not self._visibility.get(name, True))
@@ -374,7 +413,223 @@ class SceneViewer:
             title += " [REC]"
         if self._status_text:
             title += f" | {self._status_text}"
-        self.view.setWindowTitle(title)
+        self._main_window.setWindowTitle(title)
+        self._update_record_button()
+
+    def _update_record_button(self) -> None:
+        if self._record_button is None:
+            return
+        self._record_button.setText("Stop Recording" if self._recording is not None else "Start Recording")
+
+    def _refresh_status_label(self) -> None:
+        if self._status_label is None:
+            return
+        self._status_label.setText(self._status_text.replace(" | ", "\n"))
+
+    def _emit_control(self, action: str, value: ControlValue = None) -> None:
+        if self._control_callback is not None:
+            self._control_callback(action, value)
+
+    def _show_shortcuts_dialog(self) -> None:
+        QtWidgets.QMessageBox.information(self._main_window, "Keyboard Shortcuts", _CONTROLS_TEXT)
+
+    def _build_control_panel(self, ray_clip_enabled: bool) -> None:
+        dock = QtWidgets.QDockWidget("Controls", self._main_window)
+        dock.setObjectName("controls_dock")
+        dock.setAllowedAreas(QtCore.Qt.LeftDockWidgetArea | QtCore.Qt.RightDockWidgetArea)
+        dock.setMinimumWidth(300)
+
+        scroll = QtWidgets.QScrollArea(dock)
+        scroll.setWidgetResizable(True)
+        container = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(container)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+
+        actions_box = QtWidgets.QGroupBox("Actions")
+        actions_layout = QtWidgets.QVBoxLayout(actions_box)
+        actions_layout.setContentsMargins(10, 14, 10, 10)
+        actions_layout.setSpacing(8)
+        self._record_button = QtWidgets.QPushButton()
+        self._record_button.clicked.connect(lambda _: self.toggle_recording())
+        actions_layout.addWidget(self._record_button)
+        shortcuts_button = QtWidgets.QPushButton("Show Shortcuts")
+        shortcuts_button.clicked.connect(lambda _: self._show_shortcuts_dialog())
+        actions_layout.addWidget(shortcuts_button)
+        layout.addWidget(actions_box)
+
+        camera_box = QtWidgets.QGroupBox("Camera")
+        camera_layout = QtWidgets.QFormLayout(camera_box)
+        camera_layout.setContentsMargins(10, 14, 10, 10)
+        camera_layout.setSpacing(8)
+        self._smooth_orbit_checkbox = QtWidgets.QCheckBox("Enable smooth orbit")
+        self._smooth_orbit_checkbox.setChecked(self._smooth_orbit_enabled)
+        self._smooth_orbit_checkbox.toggled.connect(self.set_smooth_orbit_enabled)
+        camera_layout.addRow(self._smooth_orbit_checkbox)
+        self._smooth_orbit_speed_spin = QtWidgets.QDoubleSpinBox()
+        self._smooth_orbit_speed_spin.setRange(0.0, 360.0)
+        self._smooth_orbit_speed_spin.setDecimals(1)
+        self._smooth_orbit_speed_spin.setSingleStep(1.0)
+        self._smooth_orbit_speed_spin.setSuffix(" deg/s")
+        self._smooth_orbit_speed_spin.setValue(self._smooth_orbit_speed_deg_per_sec)
+        self._smooth_orbit_speed_spin.valueChanged.connect(self.set_smooth_orbit_speed)
+        camera_layout.addRow("Orbit speed", self._smooth_orbit_speed_spin)
+        layout.addWidget(camera_box)
+
+        scene_box = QtWidgets.QGroupBox("Scene")
+        scene_layout = QtWidgets.QVBoxLayout(scene_box)
+        scene_layout.setContentsMargins(10, 14, 10, 10)
+        scene_layout.setSpacing(6)
+        for name, label in _VISIBILITY_GROUP_OPTIONS:
+            checkbox = QtWidgets.QCheckBox(label)
+            checkbox.setChecked(self._visibility.get(name, True))
+            checkbox.toggled.connect(lambda checked, group_name=name: self._set_group_visible(group_name, checked))
+            self._group_checkboxes[name] = checkbox
+            scene_layout.addWidget(checkbox)
+        layout.addWidget(scene_box)
+
+        filter_box = QtWidgets.QGroupBox("Filter")
+        filter_layout = QtWidgets.QFormLayout(filter_box)
+        filter_layout.setContentsMargins(10, 14, 10, 10)
+        filter_layout.setSpacing(8)
+        self._filter_mode_combo = QtWidgets.QComboBox()
+        for label, value in _FILTER_MODE_OPTIONS:
+            self._filter_mode_combo.addItem(label, value)
+        filter_index = self._filter_mode_combo.findData(self._config.filter.mode)
+        if filter_index >= 0:
+            self._filter_mode_combo.setCurrentIndex(filter_index)
+        self._filter_mode_combo.currentIndexChanged.connect(
+            lambda index: self._emit_control("set_filter_mode", self._filter_mode_combo.itemData(index))
+        )
+        filter_layout.addRow("Mode", self._filter_mode_combo)
+
+        self._ema_alpha_spin = QtWidgets.QDoubleSpinBox()
+        self._ema_alpha_spin.setRange(0.01, 1.0)
+        self._ema_alpha_spin.setDecimals(2)
+        self._ema_alpha_spin.setSingleStep(0.01)
+        self._ema_alpha_spin.setValue(self._config.filter.ema_alpha)
+        self._ema_alpha_spin.valueChanged.connect(lambda value: self._emit_control("set_ema_alpha", value))
+        filter_layout.addRow("EMA alpha", self._ema_alpha_spin)
+
+        self._one_euro_min_cutoff_spin = QtWidgets.QDoubleSpinBox()
+        self._one_euro_min_cutoff_spin.setRange(0.0001, 50.0)
+        self._one_euro_min_cutoff_spin.setDecimals(3)
+        self._one_euro_min_cutoff_spin.setSingleStep(0.1)
+        self._one_euro_min_cutoff_spin.setValue(self._config.filter.one_euro_min_cutoff)
+        self._one_euro_min_cutoff_spin.valueChanged.connect(
+            lambda value: self._emit_control("set_one_euro_min_cutoff", value)
+        )
+        filter_layout.addRow("One Euro min cutoff", self._one_euro_min_cutoff_spin)
+
+        self._one_euro_beta_spin = QtWidgets.QDoubleSpinBox()
+        self._one_euro_beta_spin.setRange(0.0, 10.0)
+        self._one_euro_beta_spin.setDecimals(3)
+        self._one_euro_beta_spin.setSingleStep(0.002)
+        self._one_euro_beta_spin.setValue(self._config.filter.one_euro_beta)
+        self._one_euro_beta_spin.valueChanged.connect(
+            lambda value: self._emit_control("set_one_euro_beta", value)
+        )
+        filter_layout.addRow("One Euro beta", self._one_euro_beta_spin)
+        layout.addWidget(filter_box)
+
+        ray_box = QtWidgets.QGroupBox("Ray")
+        ray_layout = QtWidgets.QVBoxLayout(ray_box)
+        ray_layout.setContentsMargins(10, 14, 10, 10)
+        ray_layout.setSpacing(8)
+        self._ray_clip_checkbox = QtWidgets.QCheckBox("Clip gaze ray on object hit")
+        self._ray_clip_checkbox.setChecked(ray_clip_enabled)
+        self._ray_clip_checkbox.toggled.connect(lambda checked: self._emit_control("set_ray_clip", checked))
+        ray_layout.addWidget(self._ray_clip_checkbox)
+        layout.addWidget(ray_box)
+
+        status_box = QtWidgets.QGroupBox("Status")
+        status_layout = QtWidgets.QVBoxLayout(status_box)
+        status_layout.setContentsMargins(10, 14, 10, 10)
+        status_layout.setSpacing(8)
+        self._status_label = QtWidgets.QLabel(self._status_text)
+        self._status_label.setWordWrap(True)
+        self._status_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        status_layout.addWidget(self._status_label)
+        layout.addWidget(status_box)
+
+        layout.addStretch(1)
+        scroll.setWidget(container)
+        dock.setWidget(scroll)
+        self._main_window.addDockWidget(QtCore.Qt.RightDockWidgetArea, dock)
+        self._update_record_button()
+        self._refresh_status_label()
+
+    def set_smooth_orbit_enabled(self, enabled: bool) -> None:
+        enabled = bool(enabled)
+        if self._smooth_orbit_enabled == enabled:
+            checkbox = self._smooth_orbit_checkbox
+            if checkbox is not None and checkbox.isChecked() != enabled:
+                blocked = checkbox.blockSignals(True)
+                checkbox.setChecked(enabled)
+                checkbox.blockSignals(blocked)
+            return
+
+        self._smooth_orbit_enabled = enabled
+        if enabled:
+            self._smooth_orbit_last_ts = time.perf_counter()
+            self._smooth_orbit_timer.start()
+        else:
+            self._smooth_orbit_timer.stop()
+            self._smooth_orbit_last_ts = None
+
+        checkbox = self._smooth_orbit_checkbox
+        if checkbox is not None and checkbox.isChecked() != enabled:
+            blocked = checkbox.blockSignals(True)
+            checkbox.setChecked(enabled)
+            checkbox.blockSignals(blocked)
+
+    def set_smooth_orbit_speed(self, speed_deg_per_sec: float) -> None:
+        self._smooth_orbit_speed_deg_per_sec = max(0.0, float(speed_deg_per_sec))
+        spin = self._smooth_orbit_speed_spin
+        if spin is not None and abs(spin.value() - self._smooth_orbit_speed_deg_per_sec) > 1e-9:
+            blocked = spin.blockSignals(True)
+            spin.setValue(self._smooth_orbit_speed_deg_per_sec)
+            spin.blockSignals(blocked)
+
+    def sync_control_panel(
+        self,
+        *,
+        filter_mode: str | None = None,
+        ema_alpha: float | None = None,
+        one_euro_min_cutoff: float | None = None,
+        one_euro_beta: float | None = None,
+        ray_clip_enabled: bool | None = None,
+    ) -> None:
+        if self._filter_mode_combo is not None and filter_mode is not None:
+            index = self._filter_mode_combo.findData(filter_mode)
+            if index >= 0 and self._filter_mode_combo.currentIndex() != index:
+                blocked = self._filter_mode_combo.blockSignals(True)
+                self._filter_mode_combo.setCurrentIndex(index)
+                self._filter_mode_combo.blockSignals(blocked)
+
+        if self._ema_alpha_spin is not None and ema_alpha is not None:
+            if abs(self._ema_alpha_spin.value() - ema_alpha) > 1e-9:
+                blocked = self._ema_alpha_spin.blockSignals(True)
+                self._ema_alpha_spin.setValue(ema_alpha)
+                self._ema_alpha_spin.blockSignals(blocked)
+
+        if self._one_euro_min_cutoff_spin is not None and one_euro_min_cutoff is not None:
+            if abs(self._one_euro_min_cutoff_spin.value() - one_euro_min_cutoff) > 1e-9:
+                blocked = self._one_euro_min_cutoff_spin.blockSignals(True)
+                self._one_euro_min_cutoff_spin.setValue(one_euro_min_cutoff)
+                self._one_euro_min_cutoff_spin.blockSignals(blocked)
+
+        if self._one_euro_beta_spin is not None and one_euro_beta is not None:
+            if abs(self._one_euro_beta_spin.value() - one_euro_beta) > 1e-9:
+                blocked = self._one_euro_beta_spin.blockSignals(True)
+                self._one_euro_beta_spin.setValue(one_euro_beta)
+                self._one_euro_beta_spin.blockSignals(blocked)
+
+        if self._ray_clip_checkbox is not None and ray_clip_enabled is not None:
+            if self._ray_clip_checkbox.isChecked() != ray_clip_enabled:
+                blocked = self._ray_clip_checkbox.blockSignals(True)
+                self._ray_clip_checkbox.setChecked(ray_clip_enabled)
+                self._ray_clip_checkbox.blockSignals(blocked)
 
     def _build_static_scene(self) -> None:
         assert gl is not None
@@ -603,8 +858,7 @@ class SceneViewer:
         }
         action = control_actions.get(key)
         if action is not None:
-            if self._control_callback is not None:
-                self._control_callback(action)
+            self._emit_control(action)
             return True
 
         if key in (QtCore.Qt.Key_H, QtCore.Qt.Key_Z):
@@ -614,13 +868,7 @@ class SceneViewer:
         return False
 
     def _toggle_smooth_orbit(self) -> None:
-        self._smooth_orbit_enabled = not self._smooth_orbit_enabled
-        if self._smooth_orbit_enabled:
-            self._smooth_orbit_last_ts = time.perf_counter()
-            self._smooth_orbit_timer.start()
-        else:
-            self._smooth_orbit_timer.stop()
-            self._smooth_orbit_last_ts = None
+        self.set_smooth_orbit_enabled(not self._smooth_orbit_enabled)
 
     def _tick_smooth_orbit(self) -> None:
         if not self._smooth_orbit_enabled:
@@ -803,4 +1051,5 @@ class SceneViewer:
             f"src={source_ms:5.2f}ms filt={filter_ms:5.2f}ms geom={geom_ms:5.2f}ms render={render_ms:5.2f}ms | "
             f"{filter_info}"
         )
+        self._refresh_status_label()
         self._refresh_window_title()

@@ -40,32 +40,59 @@ def run_app(mode: str, config_path: str | Path) -> int:
     smoother = PoseGazeSmoother(cfg.filter)
     profiler = FrameProfiler()
     clip_ray_on_hit = True
+    viewer: SceneViewer | None = None
 
-    def handle_control(action: str) -> None:
+    def sync_viewer_controls() -> None:
+        if viewer is None:
+            return
+        viewer.sync_control_panel(
+            filter_mode=smoother.mode,
+            ema_alpha=smoother.config.ema_alpha,
+            one_euro_min_cutoff=smoother.config.one_euro_min_cutoff,
+            one_euro_beta=smoother.config.one_euro_beta,
+            ray_clip_enabled=clip_ray_on_hit,
+        )
+
+    def handle_control(action: str, value: object | None = None) -> None:
         nonlocal clip_ray_on_hit
         if action == "cycle_filter":
             smoother.cycle_mode()
+        elif action == "set_filter_mode" and isinstance(value, str):
+            smoother.set_mode(value)
         elif action == "ema_down":
             smoother.adjust_ema_alpha(-0.02)
         elif action == "ema_up":
             smoother.adjust_ema_alpha(0.02)
+        elif action == "set_ema_alpha" and value is not None:
+            smoother.set_ema_alpha(float(value))
         elif action == "beta_down":
             smoother.adjust_one_euro_beta(-0.002)
         elif action == "beta_up":
             smoother.adjust_one_euro_beta(0.002)
+        elif action == "set_one_euro_beta" and value is not None:
+            smoother.set_one_euro_beta(float(value))
         elif action == "min_cutoff_down":
             smoother.adjust_one_euro_min_cutoff(-0.1)
         elif action == "min_cutoff_up":
             smoother.adjust_one_euro_min_cutoff(0.1)
+        elif action == "set_one_euro_min_cutoff" and value is not None:
+            smoother.set_one_euro_min_cutoff(float(value))
         elif action == "toggle_ray_clip":
             clip_ray_on_hit = not clip_ray_on_hit
+        elif action == "set_ray_clip" and value is not None:
+            clip_ray_on_hit = bool(value)
+        else:
+            return
+        sync_viewer_controls()
 
     viewer = SceneViewer(
         cfg,
         mode=mode,
         control_callback=handle_control,
         face_mesh_points_head=face_mesh_points_head,
+        ray_clip_enabled=clip_ray_on_hit,
     )
+    sync_viewer_controls()
 
     source.start()
     viewer.qt_app.aboutToQuit.connect(source.close)

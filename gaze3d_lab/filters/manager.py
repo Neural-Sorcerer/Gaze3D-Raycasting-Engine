@@ -56,6 +56,13 @@ class PoseGazeSmoother:
         order = ["none", "ema", "one_euro"]
         idx = (order.index(self.mode) + 1) % len(order)
         self.mode = order[idx]
+        self.config.mode = self.mode
+        return self.mode
+
+    def set_mode(self, mode: str) -> str:
+        if mode in {"none", "ema", "one_euro"}:
+            self.mode = mode
+            self.config.mode = self.mode
         return self.mode
 
     def update(
@@ -86,21 +93,30 @@ class PoseGazeSmoother:
         )
 
     def adjust_ema_alpha(self, delta: float) -> float:
-        new_alpha = float(np.clip(self._ema_position.alpha + delta, 0.01, 1.0))
+        return self.set_ema_alpha(self._ema_position.alpha + delta)
+
+    def set_ema_alpha(self, value: float) -> float:
+        new_alpha = float(np.clip(value, 0.01, 1.0))
         for filt in (self._ema_position, self._ema_euler, self._ema_gaze):
             filt.set_alpha(new_alpha)
         self.config.ema_alpha = new_alpha
         return new_alpha
 
     def adjust_one_euro_beta(self, delta: float) -> float:
-        new_beta = max(0.0, self.config.one_euro_beta + delta)
+        return self.set_one_euro_beta(self.config.one_euro_beta + delta)
+
+    def set_one_euro_beta(self, value: float) -> float:
+        new_beta = max(0.0, float(value))
         self.config.one_euro_beta = new_beta
         for filt in (self._oe_position, self._oe_euler, self._oe_gaze):
             filt.set_params(beta=new_beta)
         return new_beta
 
     def adjust_one_euro_min_cutoff(self, delta: float) -> float:
-        new_cutoff = max(1e-4, self.config.one_euro_min_cutoff + delta)
+        return self.set_one_euro_min_cutoff(self.config.one_euro_min_cutoff + delta)
+
+    def set_one_euro_min_cutoff(self, value: float) -> float:
+        new_cutoff = max(1e-4, float(value))
         self.config.one_euro_min_cutoff = new_cutoff
         for filt in (self._oe_position, self._oe_euler, self._oe_gaze):
             filt.set_params(min_cutoff=new_cutoff)
